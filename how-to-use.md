@@ -58,15 +58,27 @@ If you wish to enable Xdebug for local development
 
 4. Edit the returned file adding the following lines:
 
-    ```zend_extension=xdebug.so  
+    ```
+    zend_extension=xdebug.so  
     xdebug.remote_enable = 1  
     xdebug.remote_autostart = 1  
     xdebug.remote_host = 10.0.2.2  
     xdebug.remote_port = 9000  
-    xdebug.max_nesting_level = 512    
+    xdebug.max_nesting_level = 512
 
-5. Restart PHP FPM   
+5. Run the following commands to set default version of PHP. Replace VERSION with the version of PHP your project is running.  
+
+    ```
+    sudo update-alternatives --set php /usr/bin/php7.VERSION
+    sudo update-alternatives --set phar /usr/bin/phar7.VERSION
+    sudo update-alternatives --set phar.phar /usr/bin/phar.phar7.VERSION 
+    sudo update-alternatives --set phpize /usr/bin/phpize7.VERSION
+    sudo update-alternatives --set php-config /usr/bin/php-config7.VERSION
+   
+*Replace version with the version of PHP the project is running e.g* ```php7.4```          
+
+6. Restart PHP FPM   
 ```sudo systemctl restart php7.VERSION-fpm```   
 *Replace version with the version of PHP the project is running e.g* ```php7.4```
 
-6. Follow instructions to configure PHPSTORM for Xdebug development
+7. Follow instructions to configure PHPSTORM for Xdebug development using 'vagrant' as the IDE key name.
