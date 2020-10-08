@@ -36,123 +36,101 @@ block="server {
     fastcgi_buffers 4 256k;
     fastcgi_busy_buffers_size 256k;
 
-
-    # Do not log attempts for common files
-    #location ~ ^/(favicon.ico) {
-    #    access_log off;
-    #    log_not_found off;
-    #}
-
-    location @rewrite {
-    # You have 2 options here
-    # For D7 and above:
-    # Clean URLs are handled in drupal_environment_initialize().
-    rewrite ^ /index.php last;
+    location = /favicon.ico {
+        log_not_found off;
+        access_log off;
     }
 
-    # Do not log attempts for robots.txt
     location = /robots.txt {
         allow all;
         log_not_found off;
         access_log off;
     }
 
-    # Deny access to 'hidden' files and directories whose names
-    # begin with a period.
-    location ~ (^|/)\. {
-        access_log off;
-        log_not_found off;
-        return 404;
+    # Very rarely should these ever be accessed outside of your lan
+    location ~* \.(txt|log)$ {
+        allow 192.168.0.0/16;
+        deny all;
     }
 
-    # Deny obviously bad requests
-    location ~ \.(jsp|cgi)$ {
-        return 410;
+    location ~ \..*/.*\.php$ {
+        return 403;
     }
 
-    # Deny access to files the public doesn't need
-    location ~* ^.+(\.(txt|log|engine|inc|info|install|make|module|profile|test|po|sh|sql|theme|tpl(\.php)?|xtmpl))$ {
-        internal;
+    location ~ ^/sites/.*/private/ {
+        return 403;
     }
 
-    # Deny access to other PHP files
-    location ~ \..*/.*\.php {
-        internal;
-    }
-
-    # Deny access to private and backups
-    location ~* ^/sites/.*/(private|files/backup_migrate)/ {
-        access_log off;
-        return 404;
-    }
-
-    # Attempt to serve the request by trying direct file, directory, Drupal Controller
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-        expires 1y;
-    }
-
-    # Check: http://wiki.nginx.org/Pitfalls
-    location ~* ^/(install|update|apc|info)\.php {
-        # do not cache dynamic content
-        expires off;
-
-        fastcgi_pass   unix:/var/run/php/php$5-fpm.sock;
-        fastcgi_buffers 1024 4k;
-
-        fastcgi_index  index.php;
-        fastcgi_param  SCRIPT_FILENAME  \$document_root\$fastcgi_script_name;
-        include        fastcgi_params;
-    }
-
-    # Allow 'Well-Known URIs' as per RFC 5785
+    # Allow \"Well-Known URIs\" as per RFC 5785
     location ~* ^/.well-known/ {
         allow all;
     }
 
-    # Below locations are for image cache
-    location ~* files/styles {
-        access_log off;
-        log_not_found off;
-        expires 1y;
-        try_files \$uri @image_rewrite;
+    # Block access to \"hidden\" files and directories whose names begin with a
+    # period. This includes directories used by version control systems such
+    # as Subversion or Git to store control files.
+    location ~ (^|/)\. {
+        return 403;
     }
 
-    location @image_rewrite {
-        rewrite ^/(.*)$ /index.php?q=$1 last;
+    location / {
+        # try_files \$uri @rewrite; # For Drupal <= 6
+        try_files \$uri /index.php?\$query_string; # For Drupal >= 7
     }
 
-    # Pass PHP scripts to PHP-FPM daemon
-    # Check: http://wiki.nginx.org/Pitfalls
-    location ~* \.php$ {
-        # do not cache dynamic content
-        expires off;
+    location @rewrite {
+        rewrite ^/(.*)$ /index.php?q=\$1;
+    }
 
-        # filter out problem conditions
-        location ~ \..*/.*\.php$ { return 404; }
+    # Don't allow direct access to PHP files in the vendor directory.
+    location ~ /vendor/.*\.php$ {
+        deny all;
+        return 404;
+    }
 
+    # In Drupal 8, we must also match new paths where the '.php' appears in
+    # the middle, such as update.php/selection. The rule we use is strict,
+    # and only allows this pattern with the update.php front controller.
+    # This allows legacy path aliases in the form of
+    # blog/index.php/legacy-path to continue to route to Drupal nodes. If
+    # you do not have any paths like that, then you might prefer to use a
+    # laxer rule, such as:
+    #   location ~ \.php(/|$) {
+    # The laxer rule will continue to work if Drupal uses this new URL
+    # pattern with front controllers other than update.php in a future
+    # release.
+    location ~ '\.php$|^/update.php' {
+        fastcgi_split_path_info ^(.+?\.php)(|/.*)$;
+        # Security note: If you're running a version of PHP older than the
+        # latest 5.3, you should have \"cgi.fix_pathinfo = 0;\" in php.ini.
+        # See http://serverfault.com/q/627903/94922 for details.
+        include fastcgi_params;
+        # Block httpoxy attacks. See https://httpoxy.org/.
+        fastcgi_param HTTP_PROXY \"\";
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+        fastcgi_param QUERY_STRING \$query_string;
+        fastcgi_intercept_errors on;
+        # PHP socket location.
         fastcgi_pass   unix:/var/run/php/php$5-fpm.sock;
         fastcgi_buffers 1024 4k;
-
-        fastcgi_index  index.php;
-        fastcgi_param  SCRIPT_FILENAME  \$document_root\$fastcgi_script_name;
-        include        fastcgi_params;
     }
 
-    # Directives to send expires headers and turn off 404 error logging for Static assets
-    location ~* \.(?:css|js|jpe?g|gif|png|pdf|txt|woff2?)$ {
-        access_log off;
-        log_not_found off;
-        expires 1y;
-        add_header Cache-Control public;
+    # Fighting with Styles? This little gem is amazing.
+    # location ~ ^/sites/.*/files/imagecache/ { # For Drupal <= 6
+    location ~ ^/sites/.*/files/styles/ { # For Drupal >= 7
+        try_files \$uri @rewrite;
     }
 
-    # Shorter cache period to allow quicker client changes
-    location ~* \.(?:ico)$ {
-        access_log off;
+    # Handle private files through Drupal. Private file's path can come
+    # with a language prefix.
+    location ~ ^(/[a-z\-]+)?/system/files/ { # For Drupal >= 7
+        try_files \$uri /index.php?\$query_string;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+        expires max;
         log_not_found off;
-        expires 30d;
-        add_header Cache-Control public;
     }
 
     # Nginx gzip_static does not add Vary header for fonts.
