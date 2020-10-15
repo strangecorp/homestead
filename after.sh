@@ -27,3 +27,10 @@ function blt() {
 }
 eof
 fi
+
+# Add additional packages.
+sudo apt-get update
+sudo apt-get install php-http -y
+sudo apt-get install php-raphf -y
+sudo apt-get install php-propro -y
+sudo apt-get install bsdtar -y
