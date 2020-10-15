@@ -2,6 +2,7 @@
 
 destDir=/home/vagrant/.bashrc
 
+# Enable execution of BLT commands within VM.
 if test -f "$destDir" && ! grep -q "function blt()" "$destDir";
 then
 cat << 'eof' >> "$destDir"
